@@ -1,0 +1,10 @@
+/inference_node:
+  ros__parameters:
+    image_topic: '/front_camera/image_color/compressed' #topic where the node subscribes for image feed
+    crop_top: 630 #crop out all pixels above this location
+    crop_bottom: 1430 #crop out all pixel below this location
+    crop_left: 0 #crop out all pixels left of this location
+    crop_right: 2248 #crop out all pixels right of this location
+    downscaling_factor: 2 #downscale the image by this factor before processing
+    model_path: '/home/eerik/deeplabv3/logs/resnet50-lr-0.001-all-autolabels/checkpoints/best.pth' #path where trained weights are stored
+
