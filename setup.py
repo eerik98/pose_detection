@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 import os
 from glob import glob
 
-package_name = 'road_segmentation'
+package_name = 'pose_detection'
 
 setup(
     name=package_name,
@@ -25,7 +25,7 @@ setup(
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': ['inference = road_segmentation.inference_node:main',
+        'console_scripts': ['inference = pose_detection.inference_node:main',
         ],
     },
 )
