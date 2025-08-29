@@ -10,3 +10,4 @@ pip3 install -r <path to requirements.txt>
 3. Build your ROS2 workspace with `colcon build`
 4. Publish images to the topic defined in `params.yaml`
 5. Launch the node with `ros2 launch pose_detection launch.py`.
+6. Pose detections are visualized to the topic `/pose_detection/image` and the center of the largest bounding box to the topic `/pose_detection/bbox_centers`. 
