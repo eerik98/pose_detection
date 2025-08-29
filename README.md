@@ -8,6 +8,6 @@ pip3 install -r <path to requirements.txt>
 ```
 2. In the launch file change the `venv_python_path` so that it points to the site packages of the created venv. 
 3. Build your ROS2 workspace with `colcon build`
-4. Publish images to the topic defined in `params.yaml`
+4. Publish images to the topic defined in `params.yaml`. **This package doesn't launch the camera ros driver**
 5. Launch the node with `ros2 launch pose_detection launch.py`.
 6. Pose detections are visualized to the topic `/pose_detection/image` and the center of the largest bounding box to the topic `/pose_detection/bbox_centers`. 
