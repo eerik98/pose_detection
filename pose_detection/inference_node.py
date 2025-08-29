@@ -6,6 +6,7 @@ import sensor_msgs
 from cv_bridge import CvBridge
 import cv2
 from ultralytics import YOLO
+from geometry_msgs.msg import PointStamped
 
 class PoseDetectionNode(Node):
     def __init__(self):
@@ -51,6 +52,14 @@ class PoseDetectionNode(Node):
             5
         )
 
+        # Publisher: bounding box centers
+        self.center_publisher = self.create_publisher(
+            PointStamped,
+            '/pose_detection/bbox_centers',
+            10
+        )
+
+
         self.get_logger().info("Pose detection node initialized.")
 
     def crop_and_scale(self,image):
@@ -77,6 +86,26 @@ class PoseDetectionNode(Node):
 
             # Publish result
             self.publisher.publish(ros_image)
+
+
+            boxes = results[0].boxes.xyxy.cpu().numpy()  # shape (N,4)
+            if boxes.shape[0] == 0:
+                return  # no detections, nothing to publish
+
+            # Compute areas and find largest bbox
+            areas = (boxes[:,2] - boxes[:,0]) * (boxes[:,3] - boxes[:,1])
+            largest_idx = areas.argmax()
+            x1, y1, x2, y2 = boxes[largest_idx]
+            cx = float((x1 + x2) / 2.0)
+            cy = float((y1 + y2) / 2.0)
+
+            # Publish only the center of the largest bounding box
+            center_msg = PointStamped()
+            center_msg.header.stamp = self.get_clock().now().to_msg()
+            center_msg.point.x = cx
+            center_msg.point.y = cy
+            center_msg.point.z = float('nan')
+            self.center_publisher.publish(center_msg)
 
         except Exception as e:
             self.get_logger().error(f"Error processing image: {e}")
