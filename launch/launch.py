@@ -5,7 +5,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
    # Define the path to your virtual environment's site-packages
-   venv_python_path = '/home/eerik/venvs/ultralytics/lib/python3.10/site-packages'
+   venv_python_path = '/home/eerik/venvs/pose_detection/lib/python3.10/site-packages'
 
     # Set the PYTHONPATH environment variable for the ROS 2 node
    os.environ['PYTHONPATH'] = f"{venv_python_path}:{os.environ.get('PYTHONPATH', '')}"

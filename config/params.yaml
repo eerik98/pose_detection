@@ -6,5 +6,5 @@
     crop_left: 0 #crop out all pixels left of this location
     crop_right: 2248 #crop out all pixels right of this location
     downscaling_factor: 2 #downscale the image by this factor before processing
-    model_path: '/home/eerik/deeplabv3/logs/resnet50-lr-0.001-all-autolabels/checkpoints/best.pth' #path where trained weights are stored
+    model_path: '/home/eerik/checkpoints/yolov8n-pose.pt' #path where trained weights are stored
 
