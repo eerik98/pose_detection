@@ -6,7 +6,42 @@ import sensor_msgs
 from cv_bridge import CvBridge
 import cv2
 from ultralytics import YOLO
-from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import Point
+from std_msgs.msg import Bool
+from  collections import deque
+from std_msgs.msg import Int32
+
+
+def hand_up(kp):
+    """
+    Check if exactly one hand is above the head for a single person.
+    kp: Keypoints object from YOLOv8
+    Returns True if exactly one hand is above the head, False otherwise.
+    """
+    if kp is None or len(kp) == 0:
+        return False
+
+    # 1. Extract the underlying data tensor (shape: 1,17,3)
+    kp_tensor = kp.data  # torch.Tensor
+
+    # 2. Move to CPU and convert to numpy
+    kp_array = kp_tensor#.cpu().numpy()  # shape (1,17,3)
+
+    # 3. Remove batch dimension
+    kp_array = kp_array[0]  # now shape (17,3)
+
+    # 4. Keypoints
+    nose = kp_array[0][:2]       # Head reference
+    l_wrist, r_wrist = kp_array[9][:2], kp_array[10][:2]
+
+    # 5. In images, smaller y = higher
+    l_above = l_wrist[1] < nose[1]
+    r_above = r_wrist[1] < nose[1]
+
+    # 6. Exactly one hand above head
+    return (l_above != r_above).cpu().numpy()
+
+
 
 class PoseDetectionNode(Node):
     def __init__(self):
@@ -34,6 +69,10 @@ class PoseDetectionNode(Node):
 
         self.model = YOLO(model_path)
 
+
+        # Running average buffer (fixed length 10)
+        self.hand_history = deque(maxlen=10)
+
         # CV bridge for ROS <-> OpenCV conversion
         self.bridge = CvBridge()
 
@@ -54,9 +93,15 @@ class PoseDetectionNode(Node):
 
         # Publisher: bounding box centers
         self.center_publisher = self.create_publisher(
-            PointStamped,
-            '/pose_detection/bbox_centers',
-            10
+            Int32,
+            '/pose_detection/dist_to_center',
+            5
+        )
+
+        self.hand_up_publisher = self.create_publisher(
+            Bool,
+            '/pose_detection/hand_up',
+            5
         )
 
 
@@ -66,6 +111,7 @@ class PoseDetectionNode(Node):
         image=image[self.crop_top:self.crop_bottom,self.crop_left:self.crop_right]
         image=cv2.resize(image,(self.W,self.H))
         return image
+    
 
     def image_callback(self, msg):
         try:
@@ -76,36 +122,86 @@ class PoseDetectionNode(Node):
             # Run inference
             results = self.model(image)
 
-            # Draw results on the image
-            annotated_frame = results[0].plot()
-
-            # Convert back to ROS Image
-            ros_image = self.bridge.cv2_to_imgmsg(annotated_frame, encoding='bgr8')
-
-            #ros_image = self.bridge.cv2_to_compressed_imgmsg(annotated_frame)
-
-            # Publish result
-            self.publisher.publish(ros_image)
-
-
+            # Extract bounding boxes
             boxes = results[0].boxes.xyxy.cpu().numpy()  # shape (N,4)
             if boxes.shape[0] == 0:
-                return  # no detections, nothing to publish
+                # No detections -> publish plain image
+                ros_image = self.bridge.cv2_to_imgmsg(image, encoding='bgr8')
+                self.publisher.publish(ros_image)
+                return
 
-            # Compute areas and find largest bbox
-            areas = (boxes[:,2] - boxes[:,0]) * (boxes[:,3] - boxes[:,1])
+            # Find largest bounding box
+            areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
             largest_idx = areas.argmax()
-            x1, y1, x2, y2 = boxes[largest_idx]
-            cx = float((x1 + x2) / 2.0)
-            cy = float((y1 + y2) / 2.0)
+            x1, y1, x2, y2 = boxes[largest_idx].astype(int)
 
-            # Publish only the center of the largest bounding box
-            center_msg = PointStamped()
-            center_msg.header.stamp = self.get_clock().now().to_msg()
-            center_msg.point.x = cx
-            center_msg.point.y = cy
-            center_msg.point.z = float('nan')
-            self.center_publisher.publish(center_msg)
+            # Copy image for drawing
+            annotated_frame = image.copy()
+
+            # Draw only the largest bounding box
+            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+
+            final_hand_up = False  # default
+
+            if results[0].keypoints is not None:
+                kp = results[0].keypoints[largest_idx]
+
+                # Raw detection
+                hand_above = hand_up(kp)
+
+                # Append to history buffer
+                self.hand_history.append(hand_above)
+
+                # Compute smoothed value: majority vote
+                if len(self.hand_history) > 0:
+                    votes = sum(self.hand_history)
+                    final_hand_up = votes > (len(self.hand_history) // 2)
+
+                # Draw text if smoothed value is True
+                if final_hand_up:
+                    cv2.putText(
+                        annotated_frame,
+                        "System on",
+                        (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1.0,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA
+                    )
+                
+                else:
+                    cv2.putText(
+                        annotated_frame,
+                        "System off",
+                        (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1.0,
+                        (0, 0, 255),
+                        2,
+                        cv2.LINE_AA
+                    )
+
+
+                # Publish Bool (smoothed)
+                msg = Bool()
+                msg.data = bool(final_hand_up)
+                self.hand_up_publisher.publish(msg)
+
+            # Publish annotated image
+            ros_image = self.bridge.cv2_to_imgmsg(annotated_frame, encoding='bgr8')
+            self.publisher.publish(ros_image)
+
+            # Publish bbox center
+            cx = float((x1 + x2) // 2.0)
+            #cy = float((y1 + y2) / 2.0)
+            
+            cam_W = self.crop_right-self.crop_left
+            dist_to_center = cam_W-cx
+
+            msg = Int32()
+            msg.data = int(dist_to_center)
+            self.center_publisher.publish(msg)
 
         except Exception as e:
             self.get_logger().error(f"Error processing image: {e}")
